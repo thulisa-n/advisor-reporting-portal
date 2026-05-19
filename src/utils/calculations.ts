@@ -39,6 +39,10 @@ export function calculateOutputs(profile: ClientProfile, balances: QuarterlyBala
     (sum, liability) => sum + (balances.liabilityBalances[liability.id] ?? 0),
     0,
   );
+  const liabilitiesAnnualInterest = profile.liabilities.reduce((sum, liability) => {
+    const balance = balances.liabilityBalances[liability.id] ?? 0;
+    return sum + balance * (liability.interestRate / 100);
+  }, 0);
 
   const privateReserveTarget = profile.monthlyExpense * 6 + profile.insuranceDeductibles;
   const excessToPrivateReserve = profile.monthlyInflow - profile.monthlyExpense;
@@ -54,6 +58,8 @@ export function calculateOutputs(profile: ClientProfile, balances: QuarterlyBala
     nonRetirementTotal,
     trustTotal: balances.trustValue,
     liabilitiesTotal,
+    liabilitiesAnnualInterest,
+    liabilitiesProjectedTotal: liabilitiesTotal + liabilitiesAnnualInterest,
     netWorth,
   };
 }

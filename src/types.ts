@@ -64,6 +64,8 @@ export interface CalculationResult {
   nonRetirementTotal: number;
   trustTotal: number;
   liabilitiesTotal: number;
+  liabilitiesAnnualInterest: number;
+  liabilitiesProjectedTotal: number;
   netWorth: number;
 }
 

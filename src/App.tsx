@@ -27,6 +27,13 @@ function parseAmount(input: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
+function parseRate(input: string): number {
+  if (!input.trim()) return 0;
+  const normalized = input.replace(",", ".");
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : 0;
+}
+
 function TextField(props: {
   label: string;
   required?: boolean;
@@ -447,6 +454,9 @@ export default function App() {
                   <p className="mt-1 text-sm text-slate-600">
                     Enter the latest balances. Totals update in real-time and required fields are flagged.
                   </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Liability balances are entered separately; interest-rate changes update annual interest impact.
+                  </p>
                   <div className="mt-4 flex gap-2">
                     <button
                       className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200"
@@ -580,6 +590,14 @@ export default function App() {
                     />
                     <MetricCard label="Trust Total" value={currency.format(calculations.trustTotal)} />
                     <MetricCard label="Liabilities (Separate)" value={currency.format(calculations.liabilitiesTotal)} />
+                    <MetricCard
+                      label="Annual Liability Interest"
+                      value={currency.format(calculations.liabilitiesAnnualInterest)}
+                    />
+                    <MetricCard
+                      label="Liabilities + Interest"
+                      value={currency.format(calculations.liabilitiesProjectedTotal)}
+                    />
                     <MetricCard label="Grand Total Net Worth" value={currency.format(calculations.netWorth)} />
                   </div>
 
@@ -833,7 +851,7 @@ function LiabilityEditor(props: {
               onChange={(event) =>
                 props.onChange(
                   props.rows.map((item) =>
-                    item.id === row.id ? { ...item, interestRate: parseAmount(event.target.value) } : item,
+                    item.id === row.id ? { ...item, interestRate: parseRate(event.target.value) } : item,
                   ),
                 )
               }
