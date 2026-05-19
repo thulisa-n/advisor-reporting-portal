@@ -24,6 +24,10 @@ The implementation is intentionally MVP-focused for speed and clarity: local per
 - Node.js 20+ (or current LTS)
 - npm 10+
 
+## Live Deployment
+- Production URL: `https://advisor-reporting-portal.vercel.app`
+- Share this URL with the team for testing and demo review.
+
 ### Install
 ```bash
 npm install
