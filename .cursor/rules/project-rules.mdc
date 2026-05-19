@@ -1,0 +1,106 @@
+---
+description: PRD AI Engineer Test engineering standards and priorities
+alwaysApply: true
+---
+
+# PRD AI Engineer Test - Engineering Rules
+
+## Objective
+Build a fast, clean, demo-ready MVP that demonstrates product understanding, engineering judgment, rapid execution, maintainable architecture, and an AI-assisted development workflow.
+
+This is not a production-scale system.
+
+Optimize for clarity, speed, clean UX, maintainability, demo quality, and thoughtful tradeoffs.
+
+## Engineering Standards
+- Prefer readability over cleverness.
+- Use modular, reusable components.
+- Keep logic simple.
+- Avoid premature optimization.
+- Separate UI from calculations.
+- Generate concise documentation.
+- Use descriptive naming.
+- Create maintainable folder structures.
+
+## UI Standards
+The UI should feel professional, financial-dashboard inspired, clean, minimal, trustworthy, and easy for non-technical users.
+
+Use Tailwind CSS, cards, spacing, subtle shadows, and consistent typography.
+
+Avoid flashy animations, unnecessary complexity, and cluttered layouts.
+
+## Product Constraints
+- Strict 2-hour implementation expectation.
+- No need for production authentication.
+- No need for real integrations.
+- No need for advanced infrastructure.
+
+Prioritize:
+1. Core workflow
+2. Calculations
+3. Polished demo experience
+4. PDF generation
+5. Thoughtful documentation
+
+## Functional Priorities
+Core MVP:
+- Client profile management
+- Quarterly balance entry
+- Automatic calculations
+- Report preview
+- PDF generation
+
+Nice-to-have:
+- Canva export
+- Report history
+- Dropbox sync
+
+Out of scope:
+- Production auth
+- Real financial integrations
+- Enterprise infrastructure
+
+## Calculation Rules
+Always follow PRD rules exactly:
+- Liabilities are not subtracted from net worth.
+- Trust is not included in non-retirement total.
+- Calculations update in real time.
+- Missing required fields must be flagged.
+
+## Human-In-The-Loop Philosophy
+This system supports human-reviewed financial workflows.
+
+Automation assists with calculations, formatting, report generation, and workflow acceleration.
+
+Final financial validation remains human-controlled.
+
+## AI-Assisted Development Workflow
+Use AI to scaffold components, generate forms, structure architecture, create reusable utilities, generate documentation, and accelerate development.
+
+Human responsibilities:
+- Architecture decisions
+- Business logic validation
+- Final review
+- Implementation approval
+- UX judgment
+
+## Documentation Requirements
+Always document:
+- Assumptions
+- Tradeoffs
+- Future improvements
+- Alternative approaches
+- Limitations caused by time constraints
+
+## Code Quality
+Prefer:
+- Reusable components
+- Utility functions
+- Simple state management
+- Clean separation of concerns
+
+Avoid:
+- Giant files
+- Duplicated code
+- Deeply nested logic
+- Magic numbers
