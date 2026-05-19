@@ -1,0 +1,34 @@
+{
+  "client": {
+    "id": "client-demo-aw",
+    "primaryName": "Andrew Walker",
+    "spouseName": "Rebecca Walker",
+    "primaryDob": "1984-05-11",
+    "spouseDob": "1986-09-02",
+    "primarySsnLast4": "4421",
+    "spouseSsnLast4": "8013",
+    "monthlyInflow": 15000,
+    "monthlyExpense": 11000,
+    "insuranceDeductibles": 18000,
+    "trustAddress": "125 Peachtree Ave, Atlanta, GA"
+  },
+  "quarterlyReport": {
+    "year": 2026,
+    "quarter": "Q1",
+    "privateReserveBalance": 95000,
+    "trustValue": 450000,
+    "retirementBalances": {
+      "ret-c1-ira": 11000,
+      "ret-c1-roth": 15000,
+      "ret-c2-401k": 21000
+    },
+    "nonRetirementBalances": {
+      "nonret-brokerage": 50000,
+      "nonret-joint": 42000
+    },
+    "liabilityBalances": {
+      "liab-mortgage": 200000,
+      "liab-auto": 18000
+    }
+  }
+}
