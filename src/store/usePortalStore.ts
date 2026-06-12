@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ClientProfile, Quarter, QuarterlyBalances, Section } from "../types";
-import { demoClient, demoReportQ1 } from "../data/demoData";
+import { allDemoClients, allDemoReports } from "../data/demoData";
 
 interface PortalState {
   activeSection: Section;
@@ -15,6 +15,7 @@ interface PortalState {
   setSelectedYear: (year: number) => void;
   setSelectedQuarter: (quarter: Quarter) => void;
   upsertClient: (profile: ClientProfile) => void;
+  deleteClient: (clientId: string) => void;
   saveReport: (report: QuarterlyBalances) => void;
   loadDemoScenario: () => void;
   clearAllData: () => void;
@@ -85,6 +86,12 @@ export const usePortalStore = create<PortalState>()(
             selectedClientId: profile.id,
           };
         }),
+      deleteClient: (clientId) =>
+        set((state) => ({
+          clients: state.clients.filter((c) => c.id !== clientId),
+          reports: state.reports.filter((r) => r.clientId !== clientId),
+          selectedClientId: state.selectedClientId === clientId ? null : state.selectedClientId,
+        })),
       saveReport: (report) =>
         set((state) => {
           const index = state.reports.findIndex((item) => item.id === report.id);
@@ -95,15 +102,17 @@ export const usePortalStore = create<PortalState>()(
           next[index] = report;
           return { reports: next };
         }),
-      loadDemoScenario: () =>
+      loadDemoScenario: () => {
+        const now = new Date().toISOString();
         set({
-          clients: [{ ...demoClient, updatedAt: new Date().toISOString() }],
-          reports: [{ ...demoReportQ1, updatedAt: new Date().toISOString() }],
-          selectedClientId: demoClient.id,
-          selectedYear: demoReportQ1.year,
-          selectedQuarter: demoReportQ1.quarter,
+          clients: allDemoClients.map((c) => ({ ...c, updatedAt: now })),
+          reports: allDemoReports.map((r) => ({ ...r, updatedAt: now })),
+          selectedClientId: allDemoClients[0].id,
+          selectedYear: allDemoReports[0].year,
+          selectedQuarter: allDemoReports[0].quarter,
           activeSection: "dashboard",
-        }),
+        });
+      },
       clearAllData: () =>
         set({
           clients: [],

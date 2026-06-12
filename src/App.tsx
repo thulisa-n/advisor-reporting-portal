@@ -8,7 +8,7 @@ import type {
   RetirementAccount,
   Section,
 } from "./types";
-import { calculateOutputs, currency } from "./utils/calculations";
+import { calculateAge, calculateOutputs, currency } from "./utils/calculations";
 import { validateBalances, validateProfile } from "./utils/validation";
 import { createDefaultClient, emptyReport, generateId, usePortalStore } from "./store/usePortalStore";
 import { generateSacsPdf, generateTccPdf } from "./utils/pdf";
@@ -19,7 +19,14 @@ const sectionLabels: { id: Section; label: string }[] = [
   { id: "client-profile", label: "Client Profile" },
   { id: "quarterly-entry", label: "Quarterly Balances" },
   { id: "report-preview", label: "Report Preview" },
+  { id: "report-history", label: "Report History" },
 ];
+
+interface CommentRow {
+  id: number;
+  comment: string;
+  created_at: string;
+}
 
 function parseAmount(input: string): number {
   if (!input.trim()) return 0;
@@ -46,7 +53,7 @@ function TextField(props: {
     <label className="block space-y-1">
       <span className="text-sm font-medium text-slate-700">
         {props.label}
-        {props.required ? " *" : ""}
+        {props.required ? <span className="ml-0.5 text-red-500">*</span> : ""}
       </span>
       <input
         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
@@ -60,6 +67,17 @@ function TextField(props: {
 }
 
 export default function App() {
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem("theme");
+    if (stored) return stored === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+
   const {
     activeSection,
     selectedClientId,
@@ -72,6 +90,7 @@ export default function App() {
     setSelectedYear,
     setSelectedQuarter,
     upsertClient,
+    deleteClient,
     saveReport,
     loadDemoScenario,
     clearAllData,
@@ -94,10 +113,40 @@ export default function App() {
     );
   }, [reports, selectedClientId, selectedQuarter, selectedYear]);
 
+  // Last report per client (for dashboard list)
+  const lastReportByClient = useMemo(() => {
+    const map: Record<string, QuarterlyBalances> = {};
+    reports.forEach((r) => {
+      const existing = map[r.clientId];
+      if (!existing || new Date(r.updatedAt) > new Date(existing.updatedAt)) {
+        map[r.clientId] = r;
+      }
+    });
+    return map;
+  }, [reports]);
+
+  // All reports for the selected client, newest first
+  const clientReports = useMemo(() => {
+    if (!selectedClientId) return [];
+    return [...reports.filter((r) => r.clientId === selectedClientId)].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  }, [reports, selectedClientId]);
+
   const [draftClient, setDraftClient] = useState<ClientProfile>(createDefaultClient());
   const [draftReport, setDraftReport] = useState<QuarterlyBalances | null>(activeReport);
   const [clientHistory, setClientHistory] = useState<ClientProfile[]>([]);
   const [reportHistory, setReportHistory] = useState<QuarterlyBalances[]>([]);
+  const [commentInput, setCommentInput] = useState("");
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [commentStatus, setCommentStatus] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  }
 
   useEffect(() => {
     if (selectedClient) {
@@ -124,10 +173,51 @@ export default function App() {
     return calculateOutputs(selectedClient, draftReport);
   }, [selectedClient, draftReport]);
 
+  async function loadComments() {
+    try {
+      const response = await fetch("/api/create");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const rows = (await response.json()) as CommentRow[];
+      setComments(rows);
+    } catch {
+      setCommentStatus("Could not load comments from database.");
+    }
+  }
+
+  async function createComment(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const comment = commentInput.trim();
+    if (!comment) {
+      setCommentStatus("Please enter a comment before submitting.");
+      return;
+    }
+
+    setCommentStatus("Saving comment...");
+    try {
+      const response = await fetch("/api/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      setCommentInput("");
+      setCommentStatus("Comment saved to Postgres.");
+      await loadComments();
+    } catch {
+      setCommentStatus("Failed to save comment.");
+    }
+  }
+
+  useEffect(() => {
+    loadComments();
+  }, []);
+
   function saveClientProfile() {
     const now = new Date().toISOString();
     upsertClient({ ...draftClient, updatedAt: now });
     setClientHistory([]);
+    showToast("Client profile saved ✓");
   }
 
   function applyDraftClientChange(updater: (prev: ClientProfile) => ClientProfile) {
@@ -198,17 +288,49 @@ export default function App() {
     if (!draftReport) return;
     saveReport({ ...draftReport, updatedAt: new Date().toISOString() });
     setReportHistory([]);
+    showToast("Report saved ✓");
     setActiveSection("report-preview");
+  }
+
+  function handleDeleteClient(clientId: string) {
+    if (deleteConfirmId === clientId) {
+      deleteClient(clientId);
+      setDeleteConfirmId(null);
+      showToast("Client deleted");
+    } else {
+      setDeleteConfirmId(clientId);
+    }
+  }
+
+  function formatReportDate(report: QuarterlyBalances) {
+    return `${report.year} ${report.quarter}`;
+  }
+
+  function formatSavedDate(isoString: string) {
+    return new Date(isoString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed right-4 top-4 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          {toast}
+        </div>
+      )}
+
       <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[250px_1fr]">
         <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h1 className="text-lg font-semibold text-slate-900">AW Client Report Portal</h1>
-          <p className="mt-1 text-xs text-slate-500">Quarterly SACS + TCC reports</p>
+          <div className="border-b border-slate-100 pb-3">
+            <h1 className="text-lg font-semibold text-slate-900">AW Client Portal</h1>
+            <p className="mt-0.5 text-xs text-slate-500">Quarterly SACS + TCC reports</p>
+          </div>
 
-          <nav className="mt-4 space-y-2">
+          <nav className="mt-4 space-y-1">
             {sectionLabels.map((item) => (
               <button
                 key={item.id}
@@ -266,59 +388,200 @@ export default function App() {
               </label>
             </div>
           </div>
+
+          <div className="mt-4 space-y-1 border-t border-slate-200 pt-4">
+            <button
+              className="w-full rounded-lg bg-slate-100 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-200"
+              onClick={loadDemoScenario}
+            >
+              Load demo data
+            </button>
+            <button
+              className="w-full rounded-lg bg-slate-100 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-200"
+              onClick={clearAllData}
+            >
+              Clear all data
+            </button>
+            <button
+              className="w-full rounded-lg bg-slate-100 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-200"
+              onClick={() => setDarkMode((d) => !d)}
+            >
+              {darkMode ? "☀ Light mode" : "⊙ Dark mode"}
+            </button>
+          </div>
         </aside>
 
         <main className="space-y-6">
+
+          {/* ── Dashboard ────────────────────────────────────────────── */}
           {activeSection === "dashboard" && (
             <section className="space-y-4">
-              <header className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-xl font-semibold text-slate-900">Dashboard</h2>
-                <p className="text-sm text-slate-600">
-                  Manage client profiles, enter quarterly balances, and generate polished SACS/TCC reports.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                    onClick={loadDemoScenario}
-                  >
-                    Load Demo Data
-                  </button>
-                  <button
-                    className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
-                    onClick={clearAllData}
-                  >
-                    Clear Data
-                  </button>
+              <header className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900">Clients</h2>
+                  <p className="text-sm text-slate-500">{clients.length} client{clients.length !== 1 ? "s" : ""} · {reports.length} saved report{reports.length !== 1 ? "s" : ""}</p>
                 </div>
+                <button
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  onClick={() => {
+                    const fresh = createDefaultClient();
+                    setDraftClient(fresh);
+                    setClientHistory([]);
+                    setSelectedClientId(fresh.id);
+                    setActiveSection("client-profile");
+                  }}
+                >
+                  + Add Client
+                </button>
               </header>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-500">Clients</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{clients.length}</p>
+
+              {clients.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-sm">
+                  <p className="text-sm font-medium text-slate-700">No clients yet</p>
+                  <p className="mt-1 text-sm text-slate-500">Add your first client to get started.</p>
+                  <button
+                    className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                    onClick={() => {
+                      const fresh = createDefaultClient();
+                      setDraftClient(fresh);
+                      setClientHistory([]);
+                      setSelectedClientId(fresh.id);
+                      setActiveSection("client-profile");
+                    }}
+                  >
+                    + Add Client
+                  </button>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-500">Saved Reports</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{reports.length}</p>
+              ) : (
+                <div className="space-y-3">
+                  {clients.map((client) => {
+                    const last = lastReportByClient[client.id];
+                    const clientAge = client.primaryDob ? calculateAge(client.primaryDob) : null;
+                    return (
+                      <div
+                        key={client.id}
+                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">
+                              {client.primaryName || "Untitled client"}
+                              {client.spouseName ? ` & ${client.spouseName}` : ""}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {clientAge !== null ? `Age ${clientAge}` : ""}
+                              {clientAge !== null && client.spouseName ? " · " : ""}
+                              {client.spouseName && client.spouseDob ? `Spouse age ${calculateAge(client.spouseDob)}` : ""}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {last ? (
+                                <span>
+                                  Last report:{" "}
+                                  <span className="font-medium text-slate-700">
+                                    {formatReportDate(last)}
+                                  </span>{" "}
+                                  · saved {formatSavedDate(last.updatedAt)}
+                                </span>
+                              ) : (
+                                <span className="italic text-slate-400">No reports yet</span>
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              onClick={() => {
+                                setSelectedClientId(client.id);
+                                setActiveSection("client-profile");
+                              }}
+                            >
+                              Edit Profile
+                            </button>
+                            <button
+                              className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700"
+                              onClick={() => {
+                                setSelectedClientId(client.id);
+                                setActiveSection("quarterly-entry");
+                              }}
+                            >
+                              Generate Report
+                            </button>
+                            <button
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              onClick={() => {
+                                setSelectedClientId(client.id);
+                                setActiveSection("report-history");
+                              }}
+                            >
+                              History
+                            </button>
+                            {deleteConfirmId === client.id ? (
+                              <span className="flex items-center gap-1">
+                                <button
+                                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                                  onClick={() => handleDeleteClient(client.id)}
+                                >
+                                  Confirm Delete
+                                </button>
+                                <button
+                                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                                  onClick={() => setDeleteConfirmId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                                onClick={() => setDeleteConfirmId(client.id)}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-500">Current Quarter</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">
-                    {selectedYear} {selectedQuarter}
-                  </p>
-                </div>
-              </div>
+              )}
+
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Workflow checklist</h3>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-                  <li>Create or update client profile with account structure.</li>
-                  <li>Enter quarterly balances and use last values where needed.</li>
-                  <li>Review real-time calculations and required field flags.</li>
-                  <li>Preview report and download SACS/TCC PDFs.</li>
-                </ul>
+                <h3 className="text-base font-semibold text-slate-900">Comment Form (Server Action `create`)</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Submit a comment to Postgres using the `create` server action endpoint, then verify with
+                  <span className="ml-1 font-mono text-xs text-slate-500">SELECT * FROM comments;</span>
+                </p>
+                <form className="mt-3 space-y-3" onSubmit={createComment}>
+                  <textarea
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    rows={3}
+                    placeholder="Type a comment..."
+                    value={commentInput}
+                    onChange={(event) => setCommentInput(event.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                  >
+                    Submit Comment
+                  </button>
+                </form>
+                {commentStatus && <p className="mt-2 text-sm text-slate-700">{commentStatus}</p>}
+                <div className="mt-3 space-y-2">
+                  {comments.slice(0, 5).map((row) => (
+                    <div key={row.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <p className="text-sm text-slate-800">{row.comment}</p>
+                      <p className="mt-1 text-xs text-slate-500">{new Date(row.created_at).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
           )}
 
+          {/* ── Client Profile ───────────────────────────────────────── */}
           {activeSection === "client-profile" && (
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
@@ -351,6 +614,31 @@ export default function App() {
                   >
                     Revert to Saved
                   </button>
+                  {selectedClient && (
+                    deleteConfirmId === selectedClient.id ? (
+                      <span className="flex items-center gap-1">
+                        <button
+                          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                          onClick={() => { handleDeleteClient(selectedClient.id); setActiveSection("dashboard"); }}
+                        >
+                          Confirm Delete
+                        </button>
+                        <button
+                          className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                          onClick={() => setDeleteConfirmId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                        onClick={() => setDeleteConfirmId(selectedClient.id)}
+                      >
+                        Delete Client
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -425,7 +713,6 @@ export default function App() {
                 />
                 <TextField
                   label="Trust Property Address"
-                  required
                   value={draftClient.trustAddress}
                   onChange={(value) => applyDraftClientChange((prev) => ({ ...prev, trustAddress: value }))}
                 />
@@ -444,6 +731,7 @@ export default function App() {
             </section>
           )}
 
+          {/* ── Quarterly Balance Entry ──────────────────────────────── */}
           {activeSection === "quarterly-entry" && (
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Quarterly Balance Entry</h2>
@@ -561,6 +849,7 @@ export default function App() {
             </section>
           )}
 
+          {/* ── Report Preview ───────────────────────────────────────── */}
           {activeSection === "report-preview" && (
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Report Preview</h2>
@@ -577,28 +866,29 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <MetricCard label="Monthly Inflow" value={currency.format(selectedClient.monthlyInflow)} />
-                    <MetricCard label="Monthly Outflow" value={currency.format(selectedClient.monthlyExpense)} />
-                    <MetricCard label="Excess to Private Reserve" value={currency.format(calculations.excessToPrivateReserve)} />
-                    <MetricCard label="Private Reserve Target" value={currency.format(calculations.privateReserveTarget)} />
-                    <MetricCard label="Client 1 Retirement Total" value={currency.format(calculations.client1RetirementTotal)} />
-                    <MetricCard label="Client 2 Retirement Total" value={currency.format(calculations.client2RetirementTotal)} />
-                    <MetricCard
-                      label="Non-Retirement Total (No Trust)"
-                      value={currency.format(calculations.nonRetirementTotal)}
-                    />
-                    <MetricCard label="Trust Total" value={currency.format(calculations.trustTotal)} />
-                    <MetricCard label="Liabilities (Separate)" value={currency.format(calculations.liabilitiesTotal)} />
-                    <MetricCard
-                      label="Annual Liability Interest"
-                      value={currency.format(calculations.liabilitiesAnnualInterest)}
-                    />
-                    <MetricCard
-                      label="Liabilities + Interest"
-                      value={currency.format(calculations.liabilitiesProjectedTotal)}
-                    />
-                    <MetricCard label="Grand Total Net Worth" value={currency.format(calculations.netWorth)} />
+                  {/* SACS section */}
+                  <div className="mt-5">
+                    <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">SACS — Cash Flow</h3>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <MetricCard label="Monthly Inflow" value={currency.format(selectedClient.monthlyInflow)} accent="green" />
+                      <MetricCard label="Monthly Outflow" value={currency.format(selectedClient.monthlyExpense)} accent="red" />
+                      <MetricCard label="Excess to Private Reserve" value={currency.format(calculations.excessToPrivateReserve)} accent="blue" />
+                      <MetricCard label="Private Reserve Balance" value={currency.format(draftReport.privateReserveBalance)} />
+                      <MetricCard label="Private Reserve Target" value={currency.format(calculations.privateReserveTarget)} />
+                    </div>
+                  </div>
+
+                  {/* TCC section */}
+                  <div className="mt-5">
+                    <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">TCC — Net Worth</h3>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <MetricCard label="Client 1 Retirement Total" value={currency.format(calculations.client1RetirementTotal)} />
+                      <MetricCard label="Client 2 Retirement Total" value={currency.format(calculations.client2RetirementTotal)} />
+                      <MetricCard label="Non-Retirement Total" value={currency.format(calculations.nonRetirementTotal)} />
+                      <MetricCard label="Trust Total" value={currency.format(calculations.trustTotal)} />
+                      <MetricCard label="Liabilities (Separate)" value={currency.format(calculations.liabilitiesTotal)} accent="red" />
+                      <MetricCard label="Grand Total Net Worth" value={currency.format(calculations.netWorth)} accent="dark" />
+                    </div>
                   </div>
 
                   <div className="mt-6 flex flex-wrap gap-2">
@@ -621,15 +911,109 @@ export default function App() {
               )}
             </section>
           )}
+
+          {/* ── Report History ───────────────────────────────────────── */}
+          {activeSection === "report-history" && (
+            <section className="space-y-4">
+              <header className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900">Report History</h2>
+                  <p className="text-sm text-slate-500">
+                    {selectedClient
+                      ? `${selectedClient.primaryName}${selectedClient.spouseName ? ` & ${selectedClient.spouseName}` : ""}`
+                      : "Select a client to view history"}
+                  </p>
+                </div>
+                {selectedClient && (
+                  <button
+                    className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                    onClick={() => setActiveSection("quarterly-entry")}
+                  >
+                    + New Report
+                  </button>
+                )}
+              </header>
+
+              {!selectedClient ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                  <p className="text-sm text-slate-500">Select a client from the sidebar to view their report history.</p>
+                </div>
+              ) : clientReports.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                  <p className="text-sm font-medium text-slate-700">No reports saved yet</p>
+                  <p className="mt-1 text-sm text-slate-500">Generate the first report for this client.</p>
+                  <button
+                    className="mt-4 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                    onClick={() => setActiveSection("quarterly-entry")}
+                  >
+                    Generate Report
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                  {clientReports.map((report, i) => {
+                    const calc = calculateOutputs(selectedClient, report);
+                    return (
+                      <div
+                        key={report.id}
+                        className={`flex flex-wrap items-center justify-between gap-3 px-5 py-4 ${
+                          i !== clientReports.length - 1 ? "border-b border-slate-100" : ""
+                        }`}
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-900">{formatReportDate(report)}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Saved {formatSavedDate(report.updatedAt)} · Net worth {currency.format(calc.netWorth)}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            onClick={() => generateSacsPdf(selectedClient, report, calc)}
+                          >
+                            SACS PDF
+                          </button>
+                          <button
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            onClick={() => generateTccPdf(selectedClient, report, calc)}
+                          >
+                            TCC PDF
+                          </button>
+                          <button
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                            onClick={() => {
+                              setSelectedYear(report.year);
+                              setSelectedQuarter(report.quarter);
+                              setActiveSection("quarterly-entry");
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
         </main>
       </div>
     </div>
   );
 }
 
-function MetricCard(props: { label: string; value: string }) {
+function MetricCard(props: { label: string; value: string; accent?: "green" | "red" | "blue" | "dark" }) {
+  const accentMap: Record<string, string> = {
+    green: "border-l-4 border-l-green-400",
+    red:   "border-l-4 border-l-red-400",
+    blue:  "border-l-4 border-l-blue-400",
+    dark:  "border-l-4 border-l-slate-700",
+  };
+  const border = props.accent ? (accentMap[props.accent] ?? "") : "";
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className={`rounded-xl border border-slate-200 bg-slate-50 p-4 ${border}`}>
       <p className="text-xs uppercase tracking-wide text-slate-500">{props.label}</p>
       <p className="mt-2 text-xl font-semibold text-slate-900">{props.value}</p>
     </div>
@@ -713,8 +1097,8 @@ function AccountListEditor(props: {
     <div className="rounded-xl border border-slate-200 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-slate-900">{props.title}</h3>
-        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700" onClick={props.onAdd}>
-          Add
+        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200" onClick={props.onAdd}>
+          + Add
         </button>
       </div>
       <div className="mt-3 space-y-2">
@@ -755,7 +1139,7 @@ function AccountListEditor(props: {
               }
             />
             <button
-              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700"
+              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700 hover:bg-red-100"
               onClick={() => props.onChange(props.rows.filter((item) => item.id !== row.id))}
             >
               Remove
@@ -776,8 +1160,8 @@ function NonRetirementEditor(props: {
     <div className="rounded-xl border border-slate-200 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-slate-900">Non-Retirement Accounts</h3>
-        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700" onClick={props.onAdd}>
-          Add
+        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200" onClick={props.onAdd}>
+          + Add
         </button>
       </div>
       <div className="mt-3 space-y-2">
@@ -803,7 +1187,7 @@ function NonRetirementEditor(props: {
               }
             />
             <button
-              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700"
+              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700 hover:bg-red-100"
               onClick={() => props.onChange(props.rows.filter((item) => item.id !== row.id))}
             >
               Remove
@@ -824,8 +1208,8 @@ function LiabilityEditor(props: {
     <div className="rounded-xl border border-slate-200 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-slate-900">Liabilities</h3>
-        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700" onClick={props.onAdd}>
-          Add
+        <button className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200" onClick={props.onAdd}>
+          + Add
         </button>
       </div>
       <div className="mt-3 space-y-2">
@@ -857,7 +1241,7 @@ function LiabilityEditor(props: {
               }
             />
             <button
-              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700"
+              className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-sm text-red-700 hover:bg-red-100"
               onClick={() => props.onChange(props.rows.filter((item) => item.id !== row.id))}
             >
               Remove

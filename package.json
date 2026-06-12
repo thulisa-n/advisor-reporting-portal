@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:vite": "vite",
+    "dev:api": "vercel dev",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run"
@@ -14,6 +16,9 @@
   "license": "ISC",
   "description": "AW Client Report Portal MVP",
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@vercel/node": "^5.8.17",
+    "@vercel/postgres": "^0.10.0",
     "jspdf": "^4.2.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

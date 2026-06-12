@@ -13,7 +13,7 @@ export function validateProfile(profile: ClientProfile): MissingFieldIssue[] {
   if (isEmpty(profile.insuranceDeductibles)) {
     missing.push({ field: "insuranceDeductibles", label: "Insurance deductibles total" });
   }
-  if (!profile.trustAddress) missing.push({ field: "trustAddress", label: "Trust property address" });
+  // Trust address is optional — not all clients have a trust yet
 
   if (profile.retirementAccounts.length === 0) {
     missing.push({ field: "retirementAccounts", label: "At least one retirement account" });
@@ -31,7 +31,8 @@ export function validateBalances(profile: ClientProfile, balances: QuarterlyBala
   if (!balances.privateReserveBalance) {
     missing.push({ field: "privateReserveBalance", label: "Private reserve balance" });
   }
-  if (!balances.trustValue) {
+  // Only require trust value when the client has a trust address on file
+  if (profile.trustAddress && !balances.trustValue) {
     missing.push({ field: "trustValue", label: "Trust value (Zillow)" });
   }
 

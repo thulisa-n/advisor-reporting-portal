@@ -1,5 +1,5 @@
 export type Quarter = "Q1" | "Q2" | "Q3" | "Q4";
-export type Section = "dashboard" | "client-profile" | "quarterly-entry" | "report-preview";
+export type Section = "dashboard" | "client-profile" | "quarterly-entry" | "report-preview" | "report-history";
 
 export type RetirementAccountType = "IRA" | "Roth IRA" | "401K" | "Pension";
 export type NonRetirementType = "Brokerage" | "Joint" | "Savings";

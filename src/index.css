@@ -12,3 +12,52 @@ select,
 button {
   font: inherit;
 }
+
+/* ── Dark mode ─────────────────────────────────────────────────────────────── */
+/* Applied when <html class="dark"> is set. Uses specificity (.dark .x > .x)   */
+/* so App.tsx class names need no changes.                                      */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Page & card backgrounds */
+.dark .bg-slate-50  { background-color: rgb(15  23  42); }  /* slate-900 */
+.dark .bg-white     { background-color: rgb(30  41  59); }  /* slate-800 */
+.dark .bg-slate-100 { background-color: rgb(30  41  59); }  /* slate-800 */
+.dark .bg-slate-200 { background-color: rgb(51  65  85); }  /* slate-700 */
+
+/* Text */
+.dark .text-slate-900 { color: rgb(248 250 252); }  /* slate-50  */
+.dark .text-slate-700 { color: rgb(203 213 225); }  /* slate-300 */
+.dark .text-slate-600 { color: rgb(148 163 184); }  /* slate-400 */
+.dark .text-slate-500 { color: rgb(148 163 184); }  /* slate-400 */
+
+/* Borders */
+.dark .border-slate-100 { border-color: rgb(51 65 85); }   /* slate-700 */
+.dark .border-slate-200 { border-color: rgb(51 65 85); }   /* slate-700 */
+.dark .border-slate-300 { border-color: rgb(71 85 105); }  /* slate-600 */
+
+/* Hover overrides */
+.dark .hover\:bg-slate-50:hover  { background-color: rgb(30 41 59); }
+.dark .hover\:bg-slate-100:hover { background-color: rgb(30 41 59); }
+.dark .hover\:bg-slate-200:hover { background-color: rgb(51 65 85); }
+
+/* Form controls */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: rgb(30 41 59);
+  color: rgb(248 250 252);
+  border-color: rgb(71 85 105);
+}
+.dark input::placeholder { color: rgb(100 116 139); }
+
+/* Soften shadows */
+.dark .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4); }
+
+/* Warning / error banners — muted in dark */
+.dark .bg-amber-50  { background-color: rgb(41 37 0  / 0.6); }
+.dark .bg-red-50    { background-color: rgb(41  0  0  / 0.5); }
+.dark .text-amber-800 { color: rgb(253 224 71); }
+.dark .text-red-800   { color: rgb(252 165 165); }
