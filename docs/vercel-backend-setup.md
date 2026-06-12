@@ -5,6 +5,7 @@
 1. Go to [vercel.com/dashboard](https://vercel.com/dashboard) → **Storage** → **Create Database** → choose **Postgres**.
 2. Name it `aw-portal-db` (or anything), accept defaults.
 3. Once created, open the database → **Settings** → copy the **`POSTGRES_URL`** connection string.
+4. Keep DB URLs private. Do not share `POSTGRES_URL` or `DATABASE_URL` in public docs.
 
 ## 2 — Run the schema
 
@@ -72,3 +73,8 @@ vercel --prod
 ```
 
 The `/api` directory is picked up automatically by Vercel as serverless functions.
+
+## URL Separation Rule
+
+- **App URL (public):** your Vercel deployment link (safe to share with reviewers).
+- **DB URL (private):** `POSTGRES_URL` / `DATABASE_URL` (never share publicly).

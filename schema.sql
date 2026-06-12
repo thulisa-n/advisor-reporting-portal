@@ -18,9 +18,3 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 CREATE INDEX IF NOT EXISTS reports_client_id_idx ON reports(client_id);
-
-CREATE TABLE IF NOT EXISTS comments (
-  id         BIGSERIAL PRIMARY KEY,
-  comment    TEXT         NOT NULL,
-  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);

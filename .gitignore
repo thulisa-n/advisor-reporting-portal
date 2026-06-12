@@ -4,3 +4,4 @@ dist/
 *.tsbuildinfo
 coverage/
 .vercel
+.env.development.local

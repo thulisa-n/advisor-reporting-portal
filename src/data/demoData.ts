@@ -67,10 +67,10 @@ export const demoChenClient: ClientProfile = {
   insuranceDeductibles: 24000,
   trustAddress: "88 Willow Creek Dr, Austin, TX",
   retirementAccounts: [
-    { id: "ret-mc-c1-401k",  owner: "client1", label: "401K",     last4: "5502" },
-    { id: "ret-mc-c1-roth",  owner: "client1", label: "Roth IRA", last4: "3391" },
-    { id: "ret-mc-c2-ira",   owner: "client2", label: "IRA",      last4: "7744" },
-    { id: "ret-mc-c2-401k",  owner: "client2", label: "401K",     last4: "9920" },
+    { id: "ret-mc-c1-401k", owner: "client1", label: "401K",     last4: "5502" },
+    { id: "ret-mc-c1-roth", owner: "client1", label: "Roth IRA", last4: "3391" },
+    { id: "ret-mc-c2-ira",  owner: "client2", label: "IRA",      last4: "7744" },
+    { id: "ret-mc-c2-401k", owner: "client2", label: "401K",     last4: "9920" },
   ],
   nonRetirementAccounts: [
     { id: "nonret-mc-brokerage", label: "Brokerage", last4: "1188" },
@@ -78,8 +78,8 @@ export const demoChenClient: ClientProfile = {
     { id: "nonret-mc-savings",   label: "Savings",   last4: "4430" },
   ],
   liabilities: [
-    { id: "liab-mc-mortgage",  label: "Mortgage",      interestRate: 3.75 },
-    { id: "liab-mc-creditline",label: "Credit Line",   interestRate: 7.5  },
+    { id: "liab-mc-mortgage",   label: "Mortgage",    interestRate: 3.75 },
+    { id: "liab-mc-creditline", label: "Credit Line", interestRate: 7.5  },
   ],
   createdAt: "2026-02-01T09:00:00.000Z",
   updatedAt: "2026-02-01T09:00:00.000Z",
@@ -180,9 +180,9 @@ export const demoReyesClient: ClientProfile = {
     { id: "nonret-jr-savings", label: "Savings", last4: "7723" },
   ],
   liabilities: [
-    { id: "liab-jr-mortgage",  label: "Mortgage",     interestRate: 6.875 },
-    { id: "liab-jr-auto",      label: "Auto Loan",    interestRate: 5.9   },
-    { id: "liab-jr-personal",  label: "Personal Loan",interestRate: 9.25  },
+    { id: "liab-jr-mortgage", label: "Mortgage",      interestRate: 6.875 },
+    { id: "liab-jr-auto",     label: "Auto Loan",     interestRate: 5.9   },
+    { id: "liab-jr-personal", label: "Personal Loan", interestRate: 9.25  },
   ],
   createdAt: "2026-03-01T11:00:00.000Z",
   updatedAt: "2026-03-01T11:00:00.000Z",
@@ -196,8 +196,8 @@ export const demoReyesReportQ1: QuarterlyBalances = {
   privateReserveBalance: 18500,
   trustValue: 0,
   retirementBalances: {
-    "ret-jr-c1-401k":  42000,
-    "ret-jr-c2-roth":  28000,
+    "ret-jr-c1-401k": 42000,
+    "ret-jr-c2-roth": 28000,
   },
   nonRetirementBalances: {
     "nonret-jr-savings": 14000,
@@ -224,9 +224,9 @@ export const demoFinleyClient: ClientProfile = {
   insuranceDeductibles: 15000,
   trustAddress: "770 Harbor View Ln, Naples, FL",
   retirementAccounts: [
-    { id: "ret-rf-c1-ira",     owner: "client1", label: "IRA",      last4: "2255" },
-    { id: "ret-rf-c1-pension", owner: "client1", label: "Pension",  last4: "8834" },
-    { id: "ret-rf-c2-ira",     owner: "client2", label: "IRA",      last4: "7761" },
+    { id: "ret-rf-c1-ira",     owner: "client1", label: "IRA",     last4: "2255" },
+    { id: "ret-rf-c1-pension", owner: "client1", label: "Pension", last4: "8834" },
+    { id: "ret-rf-c2-ira",     owner: "client2", label: "IRA",     last4: "7761" },
   ],
   nonRetirementAccounts: [
     { id: "nonret-rf-brokerage", label: "Brokerage", last4: "1199" },

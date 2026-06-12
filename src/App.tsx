@@ -10,7 +10,7 @@ import type {
 } from "./types";
 import { calculateAge, calculateOutputs, currency } from "./utils/calculations";
 import { validateBalances, validateProfile } from "./utils/validation";
-import { createDefaultClient, emptyReport, generateId, usePortalStore } from "./store/usePortalStore";
+import { createDefaultClient, emptyReport, generateId, usePortalStore } from "./store/useApiStore";
 import { generateSacsPdf, generateTccPdf } from "./utils/pdf";
 
 const quarterOptions: Quarter[] = ["Q1", "Q2", "Q3", "Q4"];
@@ -21,12 +21,6 @@ const sectionLabels: { id: Section; label: string }[] = [
   { id: "report-preview", label: "Report Preview" },
   { id: "report-history", label: "Report History" },
 ];
-
-interface CommentRow {
-  id: number;
-  comment: string;
-  created_at: string;
-}
 
 function parseAmount(input: string): number {
   if (!input.trim()) return 0;
@@ -78,6 +72,11 @@ export default function App() {
     localStorage.setItem("theme", darkMode ? "dark" : "light");
   }, [darkMode]);
 
+  // Hydrate from Neon on first mount
+  useEffect(() => {
+    usePortalStore.getState().init();
+  }, []);
+
   const {
     activeSection,
     selectedClientId,
@@ -85,6 +84,7 @@ export default function App() {
     selectedQuarter,
     clients,
     reports,
+    apiStatus,
     setActiveSection,
     setSelectedClientId,
     setSelectedYear,
@@ -137,9 +137,6 @@ export default function App() {
   const [draftReport, setDraftReport] = useState<QuarterlyBalances | null>(activeReport);
   const [clientHistory, setClientHistory] = useState<ClientProfile[]>([]);
   const [reportHistory, setReportHistory] = useState<QuarterlyBalances[]>([]);
-  const [commentInput, setCommentInput] = useState("");
-  const [comments, setComments] = useState<CommentRow[]>([]);
-  const [commentStatus, setCommentStatus] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -172,46 +169,6 @@ export default function App() {
     if (!selectedClient || !draftReport) return null;
     return calculateOutputs(selectedClient, draftReport);
   }, [selectedClient, draftReport]);
-
-  async function loadComments() {
-    try {
-      const response = await fetch("/api/create");
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const rows = (await response.json()) as CommentRow[];
-      setComments(rows);
-    } catch {
-      setCommentStatus("Could not load comments from database.");
-    }
-  }
-
-  async function createComment(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const comment = commentInput.trim();
-    if (!comment) {
-      setCommentStatus("Please enter a comment before submitting.");
-      return;
-    }
-
-    setCommentStatus("Saving comment...");
-    try {
-      const response = await fetch("/api/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comment }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      setCommentInput("");
-      setCommentStatus("Comment saved to Postgres.");
-      await loadComments();
-    } catch {
-      setCommentStatus("Failed to save comment.");
-    }
-  }
-
-  useEffect(() => {
-    loadComments();
-  }, []);
 
   function saveClientProfile() {
     const now = new Date().toISOString();
@@ -316,6 +273,18 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* DB status banners */}
+      {apiStatus.loading && (
+        <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2 rounded-full bg-sky-600 px-4 py-1.5 text-xs font-medium text-white shadow">
+          Syncing with database…
+        </div>
+      )}
+      {apiStatus.error && (
+        <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2 rounded-full bg-amber-500 px-4 py-1.5 text-xs font-medium text-white shadow">
+          DB offline — working locally
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div className="fixed right-4 top-4 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
@@ -546,38 +515,6 @@ export default function App() {
                   })}
                 </div>
               )}
-
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Comment Form (Server Action `create`)</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Submit a comment to Postgres using the `create` server action endpoint, then verify with
-                  <span className="ml-1 font-mono text-xs text-slate-500">SELECT * FROM comments;</span>
-                </p>
-                <form className="mt-3 space-y-3" onSubmit={createComment}>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                    rows={3}
-                    placeholder="Type a comment..."
-                    value={commentInput}
-                    onChange={(event) => setCommentInput(event.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-                  >
-                    Submit Comment
-                  </button>
-                </form>
-                {commentStatus && <p className="mt-2 text-sm text-slate-700">{commentStatus}</p>}
-                <div className="mt-3 space-y-2">
-                  {comments.slice(0, 5).map((row) => (
-                    <div key={row.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <p className="text-sm text-slate-800">{row.comment}</p>
-                      <p className="mt-1 text-xs text-slate-500">{new Date(row.created_at).toLocaleString()}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </section>
           )}
 
@@ -742,9 +679,6 @@ export default function App() {
                   <p className="mt-1 text-sm text-slate-600">
                     Enter the latest balances. Totals update in real-time and required fields are flagged.
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Liability balances are entered separately; interest-rate changes update annual interest impact.
-                  </p>
                   <div className="mt-4 flex gap-2">
                     <button
                       className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200"
@@ -794,7 +728,6 @@ export default function App() {
                     />
                     <TextField
                       label="Trust Value (Zillow)"
-                      required
                       type="number"
                       value={String(draftReport.trustValue || "")}
                       onChange={(value) =>
@@ -866,7 +799,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* SACS section */}
                   <div className="mt-5">
                     <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">SACS — Cash Flow</h3>
                     <div className="grid gap-3 md:grid-cols-3">
@@ -878,7 +810,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* TCC section */}
                   <div className="mt-5">
                     <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">TCC — Net Worth</h3>
                     <div className="grid gap-3 md:grid-cols-3">

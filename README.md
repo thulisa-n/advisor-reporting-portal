@@ -25,8 +25,8 @@ The implementation is intentionally MVP-focused for speed and clarity: local per
 - npm 10+
 
 ## Live Deployment
-- Production URL: `https://advisor-reporting-portal.vercel.app`
-- Share this URL with the team for testing and demo review.
+- Use your current Vercel production alias for team testing.
+- Keep database connection URLs private in environment variables only.
 
 ### Install
 ```bash

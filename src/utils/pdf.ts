@@ -2,569 +2,365 @@ import { jsPDF } from "jspdf";
 import type { CalculationResult, ClientProfile, QuarterlyBalances } from "../types";
 import { calculateAge, currency } from "./calculations";
 
-// ── Color palette ─────────────────────────────────────────────────────────────
-type RGB = [number, number, number];
+// ─── shared helpers ───────────────────────────────────────────────────────────
 
-const C = {
-  inflow:      [34, 197, 94]   as RGB,  // green-500
-  outflow:     [239, 68, 68]   as RGB,  // red-500
-  reserve:     [59, 130, 246]  as RGB,  // blue-500
-  retirement:  [99, 102, 241]  as RGB,  // indigo-500
-  nonret:      [14, 165, 233]  as RGB,  // sky-500
-  trust:       [16, 185, 129]  as RGB,  // emerald-500
-  liability:   [239, 68, 68]   as RGB,  // red-500
-  clientBubble:[34, 197, 94]   as RGB,  // green-500
-  totals:      [203, 213, 225] as RGB,  // slate-300
-  dark:        [15, 23, 42]    as RGB,  // slate-950
-  mid:         [71, 85, 105]   as RGB,  // slate-600
-  muted:       [148, 163, 184] as RGB,  // slate-400
-  border:      [226, 232, 240] as RGB,  // slate-200
-  surface:     [248, 250, 252] as RGB,  // slate-50
-  white:       [255, 255, 255] as RGB,
-  liabBg:      [254, 226, 226] as RGB,  // red-100
-  liabText:    [153, 27, 27]   as RGB,  // red-800
-};
-
-// ── Low-level helpers ─────────────────────────────────────────────────────────
-
-function fill(doc: jsPDF, color: RGB) {
-  doc.setFillColor(color[0], color[1], color[2]);
-}
-function draw(doc: jsPDF, color: RGB) {
-  doc.setDrawColor(color[0], color[1], color[2]);
-}
-function text(doc: jsPDF, color: RGB) {
-  doc.setTextColor(color[0], color[1], color[2]);
-}
-function bold(doc: jsPDF, size: number) {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(size);
-}
-function normal(doc: jsPDF, size: number) {
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(size);
-}
-function italic(doc: jsPDF, size: number) {
-  doc.setFont("helvetica", "oblique");
-  doc.setFontSize(size);
+function quarterLabel(q: QuarterlyBalances): string {
+  return `${q.year} ${q.quarter}`;
 }
 
-/** Draw a horizontal arrow from (x1,y) to (x2,y). */
-function arrow(doc: jsPDF, x1: number, x2: number, y: number, color: RGB, lw = 2) {
-  draw(doc, color);
-  doc.setLineWidth(lw);
-  doc.line(x1, y, x2, y);
-  const h = 8;
-  doc.line(x2, y, x2 - h, y - 5);
-  doc.line(x2, y, x2 - h, y + 5);
+function slugName(profile: ClientProfile): string {
+  return profile.primaryName.replace(/\s+/g, "-").toLowerCase();
 }
 
-function quarterLabel(b: QuarterlyBalances) {
-  return `${b.year} ${b.quarter}`;
+// Draw a right-pointing arrow from (x1, y) to (x2, y)
+function drawArrow(doc: jsPDF, x1: number, x2: number, y: number) {
+  const hw = 6; // arrowhead half-width
+  doc.line(x1, y, x2 - hw, y);
+  // arrowhead triangle
+  doc.triangle(x2, y, x2 - hw, y - hw / 2, x2 - hw, y + hw / 2, "F");
 }
 
-// ── Shared page header ────────────────────────────────────────────────────────
-
-function pageHeader(doc: jsPDF, title: string, client: string, period: string) {
-  const W = 612;
-  fill(doc, C.dark);
-  doc.rect(0, 0, W, 52, "F");
-
-  text(doc, C.white);
-  bold(doc, 14);
-  doc.text(title, 30, 21);
-
-  normal(doc, 10);
-  doc.text(client, 30, 38);
-  doc.text(period, W - 30, 38, { align: "right" });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SACS PDF
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SACS PDF ─────────────────────────────────────────────────────────────────
 
 export function generateSacsPdf(
   profile: ClientProfile,
   balances: QuarterlyBalances,
-  calculations: CalculationResult,
+  calc: CalculationResult,
 ): void {
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
-  const W = 612;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = 595;
 
-  pageHeader(doc, "Simple Automated Cash Flow System (SACS)", profile.primaryName, quarterLabel(balances));
+  // ── Header ──────────────────────────────────────────────────────────────────
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 52, "F");
+  doc.setTextColor(248, 250, 252);
+  doc.setFontSize(15);
+  doc.setFont("helvetica", "bold");
+  doc.text("Systematic Accumulation of Cash Summary (SACS)", 36, 22);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `${profile.primaryName}${profile.spouseName ? ` & ${profile.spouseName}` : ""}  ·  ${quarterLabel(balances)}`,
+    36,
+    40,
+  );
 
-  // Sub-heading
-  text(doc, C.mid);
-  normal(doc, 10);
-  doc.text("Monthly Cash Flow Overview", W / 2, 72, { align: "center" });
+  // ── Three-circle cash-flow diagram ──────────────────────────────────────────
+  const cy = 148;   // circle centre y
+  const r  = 62;    // circle radius
+  const cx1 = 92;   // Inflow
+  const cx2 = 306;  // Outflow
+  const cx3 = 520;  // Private Reserve
 
-  // ── Three circles ─────────────────────────────────────────────────────────
-  // r=62 + symmetric margins gives ~74pt arrow spans — enough room for labels
-  const cy  = 210;
-  const r   = 62;
-  const cx1 = 92;   // 30 margin + r
-  const cx2 = 306;  // page centre
-  const cx3 = 520;  // W - 30 margin - r
-  const gap = 8;
+  // circle fills
+  doc.setTextColor(255, 255, 255);
 
-  // Arrow span sanity: a1x1=162, a1x2=236 → 74pt; same for arrow 2
-  const a1x1 = cx1 + r + gap;  // 162
-  const a1x2 = cx2 - r - gap;  // 236
-  const mid1 = (a1x1 + a1x2) / 2; // 199
-
-  const a2x1 = cx2 + r + gap;  // 376
-  const a2x2 = cx3 - r - gap;  // 450
-  const mid2 = (a2x1 + a2x2) / 2; // 413
-
-  // Labels above arrows (clear of the circle edges and the arrow line)
-  // Arrow 1 labels — red ×
-  text(doc, C.outflow);
-  bold(doc, 18);
-  doc.text("×", mid1, cy - 12, { align: "center" });
-  normal(doc, 7);
-  doc.text("outflow deducted", mid1, cy - 1, { align: "center" });
-
-  // Arrow 1 line
-  arrow(doc, a1x1, a1x2, cy + 8, C.outflow, 2);
-
-  // Arrow 2 labels — blue excess
-  text(doc, C.reserve);
-  bold(doc, 10);
-  doc.text(currency.format(calculations.excessToPrivateReserve) + " / mo", mid2, cy - 12, { align: "center" });
-  normal(doc, 7);
-  doc.text("excess to reserve", mid2, cy - 1, { align: "center" });
-
-  // Arrow 2 line
-  arrow(doc, a2x1, a2x2, cy + 8, C.reserve, 2);
-
-  // INFLOW circle
-  fill(doc, C.inflow);
-  draw(doc, C.inflow);
+  // Inflow — green
+  doc.setFillColor(22, 163, 74);
   doc.circle(cx1, cy, r, "F");
-  text(doc, C.white);
-  bold(doc, 11);
-  doc.text("INFLOW", cx1, cy - 14, { align: "center" });
-  bold(doc, 14);
-  doc.text(currency.format(profile.monthlyInflow), cx1, cy + 4, { align: "center" });
-  normal(doc, 8);
-  doc.text("per month", cx1, cy + 17, { align: "center" });
-
-  // OUTFLOW circle
-  fill(doc, C.outflow);
-  draw(doc, C.outflow);
+  // Outflow — red
+  doc.setFillColor(220, 38, 38);
   doc.circle(cx2, cy, r, "F");
-  text(doc, C.white);
-  bold(doc, 11);
-  doc.text("OUTFLOW", cx2, cy - 14, { align: "center" });
-  bold(doc, 14);
-  doc.text(currency.format(profile.monthlyExpense), cx2, cy + 4, { align: "center" });
-  normal(doc, 8);
-  doc.text("per month", cx2, cy + 17, { align: "center" });
-
-  // PRIVATE RESERVE circle
-  fill(doc, C.reserve);
-  draw(doc, C.reserve);
+  // Private Reserve — blue
+  doc.setFillColor(37, 99, 235);
   doc.circle(cx3, cy, r, "F");
-  text(doc, C.white);
-  bold(doc, 10);
-  doc.text("PRIVATE", cx3, cy - 18, { align: "center" });
-  doc.text("RESERVE", cx3, cy - 6, { align: "center" });
-  bold(doc, 13);
-  doc.text(currency.format(balances.privateReserveBalance), cx3, cy + 9, { align: "center" });
-  normal(doc, 7);
-  doc.text("current balance", cx3, cy + 21, { align: "center" });
 
-  // ── SACS Summary box ──────────────────────────────────────────────────────
-  const boxY = cy + r + 28;
-  const boxH = 130;
+  // circle labels (top line = category, bottom line = amount)
+  const label = (cx: number, top: string, bottom: string) => {
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(top, cx, cy - 12, { align: "center" });
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "bold");
+    doc.text(bottom, cx, cy + 2, { align: "center" });
+  };
 
-  fill(doc, C.surface);
-  draw(doc, C.border);
-  doc.setLineWidth(1);
-  doc.roundedRect(30, boxY, W - 60, boxH, 8, 8, "FD");
+  label(cx1, "Monthly Inflow", currency.format(profile.monthlyInflow));
+  label(cx2, "Monthly Outflow", currency.format(profile.monthlyExpense));
+  label(cx3, "Private Reserve", currency.format(balances.privateReserveBalance));
 
-  // Title
-  text(doc, C.dark);
-  bold(doc, 11);
-  doc.text("SACS Summary", 50, boxY + 20);
+  // arrows between circles
+  doc.setDrawColor(100, 116, 139);
+  doc.setFillColor(100, 116, 139);
+  doc.setLineWidth(1.2);
+  drawArrow(doc, cx1 + r + 4, cx2 - r - 4, cy + 8);
+  drawArrow(doc, cx2 + r + 4, cx3 - r - 4, cy + 8);
 
-  draw(doc, C.border);
-  doc.setLineWidth(0.5);
-  doc.line(50, boxY + 26, W - 50, boxY + 26);
-
-  // Left column
-  const lx = 50;
-  const lv = 215;
-  const rx = W / 2 + 10;
-  const rv = W - 50;
-
-  normal(doc, 9);
-  text(doc, C.mid);
-
-  const rows: [string, string, string, string][] = [
-    ["Monthly Inflow:",        currency.format(profile.monthlyInflow),                    "Private Reserve Balance:", currency.format(balances.privateReserveBalance)],
-    ["Monthly Outflow:",       currency.format(profile.monthlyExpense),                   "Private Reserve Target:",  currency.format(calculations.privateReserveTarget)],
-    ["Monthly Excess:",        currency.format(calculations.excessToPrivateReserve),      "Target Formula:",          `(6 × expenses) + deductibles`],
-  ];
-
-  rows.forEach(([lLabel, lVal, rLabel, rVal], i) => {
-    const ry2 = boxY + 44 + i * 26;
-    text(doc, C.mid);
-    normal(doc, 9);
-    doc.text(lLabel, lx, ry2);
-    text(doc, C.dark);
-    bold(doc, 9);
-    doc.text(lVal, lv, ry2, { align: "right" });
-
-    text(doc, C.mid);
-    normal(doc, 9);
-    doc.text(rLabel, rx, ry2);
-    text(doc, C.dark);
-    bold(doc, 9);
-    doc.text(rVal, rv, ry2, { align: "right" });
+  // caption below arrow lines
+  doc.setTextColor(71, 85, 105);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "italic");
+  const midA = (cx1 + cx2) / 2;
+  const midB = (cx2 + cx3) / 2;
+  doc.text("monthly expense", midA, cy + 22, { align: "center" });
+  doc.text(`excess: ${currency.format(calc.excessToPrivateReserve)}/mo`, midB, cy + 22, {
+    align: "center",
   });
 
-  // On-track badge
-  const onTrack = balances.privateReserveBalance >= calculations.privateReserveTarget;
-  const badgeX  = lx;
-  const badgeY2 = boxY + boxH - 20;
-  fill(doc, onTrack ? C.inflow : C.outflow);
-  doc.roundedRect(badgeX, badgeY2 - 13, onTrack ? 70 : 95, 18, 4, 4, "F");
-  text(doc, C.white);
-  bold(doc, 8);
-  doc.text(onTrack ? "ON TRACK" : "BELOW TARGET", badgeX + (onTrack ? 35 : 47.5), badgeY2, { align: "center" });
+  // ── Private Reserve target panel ─────────────────────────────────────────────
+  const prY = cy + r + 28;
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(36, prY, W - 72, 88, 6, 6);
 
-  // Deficit / surplus note
-  const diff = balances.privateReserveBalance - calculations.privateReserveTarget;
-  text(doc, diff >= 0 ? C.inflow : C.outflow);
-  italic(doc, 8);
-  doc.text(
-    diff >= 0
-      ? `Surplus: ${currency.format(diff)} above target`
-      : `Deficit: ${currency.format(Math.abs(diff))} below target`,
-    badgeX + 105,
-    badgeY2,
-  );
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("Private Reserve", 52, prY + 18);
 
-  // ── Footer ────────────────────────────────────────────────────────────────
-  text(doc, C.muted);
-  normal(doc, 7);
-  doc.text("Generated by AW Client Report Portal", W / 2, 772, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
 
-  doc.save(
-    `${profile.primaryName.replace(/\s+/g, "-").toLowerCase()}-sacs-${balances.year}-${balances.quarter}.pdf`,
-  );
+  const prRows = [
+    ["Current Balance", currency.format(balances.privateReserveBalance)],
+    [
+      "Target  (6 × monthly expenses + insurance deductibles)",
+      currency.format(calc.privateReserveTarget),
+    ],
+    ["Monthly Excess Transferred", currency.format(calc.excessToPrivateReserve)],
+  ];
+
+  let ry = prY + 36;
+  for (const [label2, value] of prRows) {
+    doc.setTextColor(71, 85, 105);
+    doc.text(label2, 52, ry);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.text(value, W - 52, ry, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    ry += 18;
+  }
+
+  // ── SACS Account detail table ─────────────────────────────────────────────────
+  let y = prY + 88 + 20;
+
+  const sectionHeader = (title: string) => {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(36, y - 13, W - 72, 18, "F");
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, 52, y);
+    y += 20;
+  };
+
+  const accountRow = (label3: string, value: number) => {
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(label3, 60, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(currency.format(value), W - 52, y, { align: "right" });
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(36, y + 5, W - 36, y + 5);
+    y += 18;
+  };
+
+  // Non-retirement (cash / brokerage)
+  sectionHeader("Non-Retirement Accounts");
+  for (const acct of profile.nonRetirementAccounts) {
+    const bal = balances.nonRetirementBalances[acct.id] ?? 0;
+    accountRow(`${acct.label} ··· ${acct.last4 || "----"}`, bal);
+  }
+
+  // Liabilities
+  sectionHeader("Liabilities");
+  for (const liab of profile.liabilities) {
+    const bal = balances.liabilityBalances[liab.id] ?? 0;
+    accountRow(`${liab.label}  (${liab.interestRate}% APR)`, bal);
+  }
+
+  // ── Footer ────────────────────────────────────────────────────────────────────
+  doc.setFillColor(241, 245, 249);
+  doc.rect(0, 820, W, 22, "F");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.setFont("helvetica", "normal");
+  doc.text("Confidential — for client use only", 36, 833);
+  doc.text(`Generated ${new Date().toLocaleDateString()}`, W - 36, 833, { align: "right" });
+
+  doc.save(`${slugName(profile)}-sacs-${quarterLabel(balances)}.pdf`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  TCC PDF
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── TCC PDF ──────────────────────────────────────────────────────────────────
 
 export function generateTccPdf(
   profile: ClientProfile,
   balances: QuarterlyBalances,
-  calculations: CalculationResult,
+  calc: CalculationResult,
 ): void {
-  const doc  = new jsPDF({ unit: "pt", format: "letter" });
-  const W    = 612;
-  const MARGIN = 30;
-  const INNER  = W - MARGIN * 2;
-  let y = 0;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = 595;
 
-  // Page break helper
-  function ensureSpace(needed: number) {
-    if (y + needed > 760) {
-      doc.addPage();
-      y = 30;
-    }
-  }
-
-  pageHeader(doc, "Total Client Chart (TCC)", profile.primaryName, quarterLabel(balances));
-  y = 65;
-
-  // ── Client info bubbles ───────────────────────────────────────────────────
-  const hasSpouse = Boolean(profile.spouseName);
-  const bubW  = hasSpouse ? (INNER - 10) / 2 : INNER;
-  const bubH  = 66;
-
-  function clientBubble(name: string, dob: string, ssn: string, x: number) {
-    fill(doc, C.clientBubble);
-    draw(doc, C.clientBubble);
-    doc.roundedRect(x, y, bubW, bubH, 10, 10, "F");
-    text(doc, C.white);
-    bold(doc, 12);
-    doc.text(name, x + bubW / 2, y + 19, { align: "center" });
-    normal(doc, 8);
-    const age = dob ? `Age: ${calculateAge(dob)}` : "";
-    const dobStr = dob ? `DOB: ${dob}` : "";
-    const ssnStr = ssn ? `SSN: ****${ssn}` : "";
-    doc.text([age, dobStr, ssnStr].filter(Boolean).join("   |   "), x + bubW / 2, y + 33, { align: "center" });
-  }
-
-  clientBubble(profile.primaryName, profile.primaryDob, profile.primarySsnLast4, MARGIN);
-  if (hasSpouse) {
-    clientBubble(
-      profile.spouseName,
-      profile.spouseDob,
-      profile.spouseSsnLast4,
-      MARGIN + bubW + 10,
-    );
-  }
-  y += bubH + 14;
-
-  // ── Section header band ───────────────────────────────────────────────────
-  function sectionHeader(label: string, color: RGB) {
-    ensureSpace(24);
-    fill(doc, color);
-    doc.roundedRect(MARGIN, y, INNER, 18, 4, 4, "F");
-    text(doc, C.white);
-    bold(doc, 9);
-    doc.text(label.toUpperCase(), MARGIN + 10, y + 12);
-    y += 24;
-  }
-
-  // ── Account bubble (generic) ──────────────────────────────────────────────
-  function accountBubble(
-    label: string,
-    sub: string,
-    amount: number,
-    x: number,
-    w: number,
-    accentColor: RGB,
-  ) {
-    const bh = 50;
-    fill(doc, C.surface);
-    draw(doc, accentColor);
-    doc.setLineWidth(1.5);
-    doc.roundedRect(x, y, w, bh, 8, 8, "FD");
-    text(doc, accentColor);
-    bold(doc, 9);
-    doc.text(label, x + w / 2, y + 13, { align: "center" });
-    if (sub) {
-      text(doc, C.muted);
-      normal(doc, 7);
-      doc.text(sub, x + w / 2, y + 24, { align: "center" });
-    }
-    text(doc, C.dark);
-    bold(doc, 11);
-    doc.text(currency.format(amount), x + w / 2, y + 39, { align: "center" });
-  }
-
-  function accountRow(
-    accounts: { label: string; sub: string; amount: number }[],
-    color: RGB,
-  ) {
-    if (accounts.length === 0) return;
-    ensureSpace(58);
-    const bw  = (INNER - (accounts.length - 1) * 8) / accounts.length;
-    accounts.forEach((acc, i) => {
-      accountBubble(acc.label, acc.sub, acc.amount, MARGIN + i * (bw + 8), bw, color);
-    });
-    y += 58;
-  }
-
-  // ── Totals bar ────────────────────────────────────────────────────────────
-  function totalsBar(items: { label: string; value: number }[]) {
-    ensureSpace(32);
-    fill(doc, C.totals);
-    doc.roundedRect(MARGIN, y, INNER, 28, 5, 5, "F");
-    const colW = INNER / items.length;
-    items.forEach((item, i) => {
-      const cx2 = MARGIN + i * colW + colW / 2;
-      text(doc, C.dark);
-      normal(doc, 7);
-      doc.text(item.label, cx2, y + 10, { align: "center" });
-      bold(doc, 9);
-      doc.text(currency.format(item.value), cx2, y + 22, { align: "center" });
-    });
-    y += 34;
-  }
-
-  // ── Retirement ────────────────────────────────────────────────────────────
-  const client1Ret = profile.retirementAccounts.filter(a => a.owner === "client1");
-  const client2Ret = profile.retirementAccounts.filter(a => a.owner === "client2");
-
-  if (client1Ret.length > 0 || client2Ret.length > 0) {
-    sectionHeader("Retirement Accounts", C.retirement);
-
-    if (client1Ret.length > 0) {
-      // Sub-label for Client 1
-      ensureSpace(16);
-      text(doc, C.retirement);
-      bold(doc, 8);
-      doc.text(`${profile.primaryName}`, MARGIN, y + 10);
-      y += 14;
-
-      accountRow(
-        client1Ret.map(a => ({
-          label: a.label,
-          sub: a.last4 ? `****${a.last4}` : "",
-          amount: balances.retirementBalances[a.id] ?? 0,
-        })),
-        C.retirement,
-      );
-    }
-
-    if (client2Ret.length > 0) {
-      ensureSpace(16);
-      text(doc, C.retirement);
-      bold(doc, 8);
-      doc.text(profile.spouseName || "Client 2", MARGIN, y + 10);
-      y += 14;
-
-      accountRow(
-        client2Ret.map(a => ({
-          label: a.label,
-          sub: a.last4 ? `****${a.last4}` : "",
-          amount: balances.retirementBalances[a.id] ?? 0,
-        })),
-        C.retirement,
-      );
-    }
-
-    totalsBar([
-      { label: `${profile.primaryName} Retirement`, value: calculations.client1RetirementTotal },
-      ...(hasSpouse
-        ? [{ label: `${profile.spouseName} Retirement`, value: calculations.client2RetirementTotal }]
-        : []),
-      {
-        label: "Combined Retirement",
-        value: calculations.client1RetirementTotal + calculations.client2RetirementTotal,
-      },
-    ]);
-  }
-
-  y += 5;
-
-  // ── Non-Retirement ────────────────────────────────────────────────────────
-  if (profile.nonRetirementAccounts.length > 0) {
-    sectionHeader("Non-Retirement Accounts", C.nonret);
-
-    accountRow(
-      profile.nonRetirementAccounts.map(a => ({
-        label: a.label,
-        sub: a.last4 ? `****${a.last4}` : "",
-        amount: balances.nonRetirementBalances[a.id] ?? 0,
-      })),
-      C.nonret,
-    );
-
-    totalsBar([
-      { label: "Non-Retirement Total (excludes trust)", value: calculations.nonRetirementTotal },
-    ]);
-  }
-
-  y += 5;
-
-  // ── Trust ─────────────────────────────────────────────────────────────────
-  sectionHeader("Trust", C.trust);
-  ensureSpace(58);
-
-  fill(doc, C.surface);
-  draw(doc, C.trust);
-  doc.setLineWidth(1.5);
-  doc.roundedRect(MARGIN, y, INNER, 54, 8, 8, "FD");
-
-  text(doc, C.trust);
-  bold(doc, 9);
-  doc.text("Real Estate — Zillow Zestimate", W / 2, y + 14, { align: "center" });
-
-  text(doc, C.mid);
-  normal(doc, 8);
-  const addr = profile.trustAddress || "—";
-  const addrLines = doc.splitTextToSize(addr, INNER - 20) as string[];
-  doc.text(addrLines, W / 2, y + 26, { align: "center" });
-
-  text(doc, C.dark);
-  bold(doc, 14);
-  doc.text(currency.format(balances.trustValue), W / 2, y + 46, { align: "center" });
-  y += 62;
-
-  y += 5;
-
-  // ── Liabilities ───────────────────────────────────────────────────────────
-  if (profile.liabilities.length > 0) {
-    sectionHeader("Liabilities", C.liability);
-
-    ensureSpace(66);
-    const bw = (INNER - (profile.liabilities.length - 1) * 8) / profile.liabilities.length;
-
-    profile.liabilities.forEach((liab, i) => {
-      const bal  = balances.liabilityBalances[liab.id] ?? 0;
-      const annualInterest = bal * (liab.interestRate / 100);
-      const lh   = 62;
-      const lx   = MARGIN + i * (bw + 8);
-
-      fill(doc, C.liabBg);
-      draw(doc, C.liability);
-      doc.setLineWidth(1.5);
-      doc.roundedRect(lx, y, bw, lh, 8, 8, "FD");
-
-      text(doc, C.liability);
-      bold(doc, 9);
-      doc.text(liab.label, lx + bw / 2, y + 13, { align: "center" });
-
-      text(doc, C.mid);
-      normal(doc, 7);
-      doc.text(`${liab.interestRate}% interest`, lx + bw / 2, y + 24, { align: "center" });
-
-      text(doc, C.dark);
-      bold(doc, 12);
-      doc.text(currency.format(bal), lx + bw / 2, y + 40, { align: "center" });
-
-      text(doc, C.muted);
-      normal(doc, 7);
-      doc.text(`Annual: ${currency.format(annualInterest)}`, lx + bw / 2, y + 53, { align: "center" });
-    });
-
-    y += 70;
-
-    // Liabilities disclaimer bar
-    ensureSpace(26);
-    fill(doc, C.liabBg);
-    draw(doc, C.liability);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(MARGIN, y, INNER, 22, 5, 5, "FD");
-    text(doc, C.liabText);
-    normal(doc, 8);
-    doc.text("Liabilities are displayed separately and are NOT subtracted from net worth.", MARGIN + 10, y + 14);
-    bold(doc, 8);
-    doc.text(currency.format(calculations.liabilitiesTotal), W - MARGIN - 10, y + 14, { align: "right" });
-    y += 28;
-  }
-
-  y += 6;
-
-  // ── Grand Total Net Worth ─────────────────────────────────────────────────
-  ensureSpace(46);
-  fill(doc, C.dark);
-  doc.roundedRect(MARGIN, y, INNER, 46, 8, 8, "F");
-
-  text(doc, C.white);
-  bold(doc, 11);
-  doc.text("GRAND TOTAL NET WORTH", MARGIN + 14, y + 17);
-
-  bold(doc, 18);
-  doc.text(currency.format(calculations.netWorth), W - MARGIN - 14, y + 30, { align: "right" });
-
-  text(doc, C.muted);
-  normal(doc, 7);
+  // ── Header ───────────────────────────────────────────────────────────────────
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 52, "F");
+  doc.setTextColor(248, 250, 252);
+  doc.setFontSize(15);
+  doc.setFont("helvetica", "bold");
+  doc.text("Total Client Capture (TCC)", 36, 22);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
   doc.text(
-    "= Client 1 Retirement + Client 2 Retirement + Non-Retirement + Trust",
-    MARGIN + 14,
-    y + 40,
+    `${profile.primaryName}${profile.spouseName ? ` & ${profile.spouseName}` : ""}  ·  ${quarterLabel(balances)}`,
+    36,
+    40,
   );
 
-  // ── Footer ────────────────────────────────────────────────────────────────
-  text(doc, C.muted);
-  normal(doc, 7);
-  const allPages = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
-  for (let p = 1; p <= allPages; p++) {
-    doc.setPage(p);
-    doc.text("Generated by AW Client Report Portal", W / 2, 776, { align: "center" });
+  // ── Client profile bubbles ────────────────────────────────────────────────────
+  const bubbleW = profile.spouseName ? 244 : 519;
+  const bubbleH = 72;
+  const bubbleY = 64;
+
+  // Client 1 bubble
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.5);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(36, bubbleY, bubbleW, bubbleH, 6, 6, "FD");
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "bold");
+  doc.text(profile.primaryName, 50, bubbleY + 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`DOB: ${profile.primaryDob || "—"}`, 50, bubbleY + 34);
+  doc.text(`Age: ${profile.primaryDob ? calculateAge(profile.primaryDob) : "—"}`, 50, bubbleY + 50);
+  doc.text(`SSN last 4: ${profile.primarySsnLast4 || "—"}`, 50 + bubbleW / 2, bubbleY + 34);
+
+  // Client 2 bubble (if present)
+  if (profile.spouseName) {
+    const bx2 = 36 + bubbleW + 10;
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(bx2, bubbleY, bubbleW, bubbleH, 6, 6, "FD");
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "bold");
+    doc.text(profile.spouseName, bx2 + 14, bubbleY + 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`DOB: ${profile.spouseDob || "—"}`, bx2 + 14, bubbleY + 34);
+    doc.text(`Age: ${profile.spouseDob ? calculateAge(profile.spouseDob) : "—"}`, bx2 + 14, bubbleY + 50);
+    doc.text(`SSN last 4: ${profile.spouseSsnLast4 || "—"}`, bx2 + 14 + bubbleW / 2, bubbleY + 34);
   }
 
-  doc.save(
-    `${profile.primaryName.replace(/\s+/g, "-").toLowerCase()}-tcc-${balances.year}-${balances.quarter}.pdf`,
+  // ── Account rows ──────────────────────────────────────────────────────────────
+  let y = bubbleY + bubbleH + 18;
+
+  const sectionHeader2 = (title: string) => {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(36, y - 13, W - 72, 18, "F");
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, 52, y);
+    y += 20;
+  };
+
+  const accountRow2 = (label: string, value: number) => {
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(label, 60, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(currency.format(value), W - 52, y, { align: "right" });
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(36, y + 5, W - 36, y + 5);
+    y += 17;
+  };
+
+  const subtotalRow = (label: string, value: number) => {
+    doc.setFillColor(248, 250, 252);
+    doc.rect(36, y - 12, W - 72, 16, "F");
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text(label, 52, y);
+    doc.text(currency.format(value), W - 52, y, { align: "right" });
+    y += 20;
+  };
+
+  // Client 1 Retirement
+  const c1Ret = profile.retirementAccounts.filter((a) => a.owner === "client1");
+  if (c1Ret.length) {
+    sectionHeader2(`${profile.primaryName} — Retirement`);
+    for (const acct of c1Ret) {
+      accountRow2(`${acct.label} ··· ${acct.last4 || "----"}`, balances.retirementBalances[acct.id] ?? 0);
+    }
+    subtotalRow("Subtotal", calc.client1RetirementTotal);
+  }
+
+  // Client 2 Retirement
+  const c2Ret = profile.retirementAccounts.filter((a) => a.owner === "client2");
+  if (c2Ret.length) {
+    sectionHeader2(`${profile.spouseName || "Client 2"} — Retirement`);
+    for (const acct of c2Ret) {
+      accountRow2(`${acct.label} ··· ${acct.last4 || "----"}`, balances.retirementBalances[acct.id] ?? 0);
+    }
+    subtotalRow("Subtotal", calc.client2RetirementTotal);
+  }
+
+  // Non-retirement (excludes trust per PRD)
+  if (profile.nonRetirementAccounts.length) {
+    sectionHeader2("Non-Retirement Accounts  (trust excluded)");
+    for (const acct of profile.nonRetirementAccounts) {
+      accountRow2(`${acct.label} ··· ${acct.last4 || "----"}`, balances.nonRetirementBalances[acct.id] ?? 0);
+    }
+    subtotalRow("Subtotal", calc.nonRetirementTotal);
+  }
+
+  // Trust
+  if (profile.trustAddress) {
+    sectionHeader2("Trust");
+    accountRow2(profile.trustAddress, balances.trustValue);
+    subtotalRow("Subtotal", calc.trustTotal);
+  }
+
+  // Liabilities (display only — not subtracted from net worth per PRD)
+  if (profile.liabilities.length) {
+    sectionHeader2("Liabilities  (display only — not subtracted from net worth)");
+    for (const liab of profile.liabilities) {
+      accountRow2(
+        `${liab.label}  (${liab.interestRate}% APR)`,
+        balances.liabilityBalances[liab.id] ?? 0,
+      );
+    }
+    subtotalRow("Subtotal", calc.liabilitiesTotal);
+  }
+
+  // ── Grand Total Net Worth ──────────────────────────────────────────────────────
+  y += 6;
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(36, y - 14, W - 72, 32, 5, 5, "F");
+  doc.setTextColor(248, 250, 252);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Grand Total Net Worth", 52, y + 4);
+  doc.text(currency.format(calc.netWorth), W - 52, y + 4, { align: "right" });
+  y += 32;
+
+  // SACS / formulas note
+  y += 10;
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(100, 116, 139);
+  doc.text(
+    "Net worth = Ret C1 + Ret C2 + Non-Ret + Trust  (liabilities shown for reference only).",
+    52,
+    y,
   );
+
+  // ── Footer ────────────────────────────────────────────────────────────────────
+  doc.setFillColor(241, 245, 249);
+  doc.rect(0, 820, W, 22, "F");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.setFont("helvetica", "normal");
+  doc.text("Confidential — for client use only", 36, 833);
+  doc.text(`Generated ${new Date().toLocaleDateString()}`, W - 36, 833, { align: "right" });
+
+  doc.save(`${slugName(profile)}-tcc-${quarterLabel(balances)}.pdf`);
 }
