@@ -151,13 +151,18 @@ export const usePortalStore = create<PortalState>()((set, get) => ({
       activeSection: "dashboard",
     });
 
-    // Sync all demo data to API
-    Promise.all([
-      ...clients.map((c) => apiFetch("/api/clients", { method: "POST", body: JSON.stringify(c) })),
-      ...reports.map((r) => apiFetch("/api/reports", { method: "POST", body: JSON.stringify(r) })),
-    ]).catch((err) => {
-      set({ apiStatus: { loading: false, error: String(err.message), lastSynced: null } });
-    });
+    // Sync clients FIRST, then reports (reports have FK → clients)
+    Promise.all(
+      clients.map((c) => apiFetch("/api/clients", { method: "POST", body: JSON.stringify(c) })),
+    )
+      .then(() =>
+        Promise.all(
+          reports.map((r) => apiFetch("/api/reports", { method: "POST", body: JSON.stringify(r) })),
+        ),
+      )
+      .catch((err) => {
+        set({ apiStatus: { loading: false, error: String(err.message), lastSynced: null } });
+      });
   },
 
   clearAllData: () => {
